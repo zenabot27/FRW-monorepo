@@ -24,6 +24,19 @@ export default defineManifest({
     service_worker: 'src/background/index.ts',
     type: 'module',
   },
+  content_scripts: [
+    {
+      matches: ['https://*/*', 'http://*/*'],
+      js: ['src/content-script/main.ts'],
+      run_at: 'document_start',
+    },
+  ],
+  web_accessible_resources: [
+    {
+      resources: ['inpage-provider.js'],
+      matches: ['https://*/*', 'http://*/*'],
+    },
+  ],
   content_security_policy: {
     extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
   },

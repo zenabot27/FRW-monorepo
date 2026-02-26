@@ -60,6 +60,15 @@ export type BackgroundRequest =
       gasLimit?: number;
       gasPriceWei?: string;
     }
+  | {
+      type: 'provider:rpc-request';
+      scope: 'ethereum' | 'flow';
+      origin: string;
+      method: string;
+      params: unknown[];
+    }
+  | { type: 'provider:get-approval-request'; requestId: string }
+  | { type: 'provider:resolve-approval'; requestId: string; approved: boolean }
   | { type: 'ui:open-sidepanel' };
 
 export type BackgroundResponse =
@@ -69,4 +78,16 @@ export type BackgroundResponse =
   | { ok: true; signature: string; digest?: string }
   | { ok: true; txId: string }
   | { ok: true; txHash: string; rawTransaction: string }
+  | { ok: true; result: unknown }
+  | {
+      ok: true;
+      approval: {
+        id: string;
+        origin: string;
+        scope: 'ethereum' | 'flow';
+        method: string;
+        params: unknown[];
+      } | null;
+    }
+  | { ok: true; resolved: boolean }
   | { ok: false; reason: string };

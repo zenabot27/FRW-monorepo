@@ -1,5 +1,6 @@
 import * as fcl from '@onflow/fcl';
 import encryptor from 'browser-passworder';
+import { Buffer } from 'buffer';
 
 import { generateBip39Mnemonic } from '../../../../packages/wallet/src/crypto/bip39';
 import { WalletCoreProvider } from '../../../../packages/wallet/src/crypto/wallet-core-provider';
@@ -47,15 +48,31 @@ type VaultPayload = {
   backedUp: boolean;
 };
 
+type PendingApproval = {
+  id: string;
+  scope: 'ethereum' | 'flow';
+  method: string;
+  origin: string;
+  params: unknown[];
+  resolve: (approved: boolean) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+
 let unlockedVault: VaultPayload | null = null;
 let unlockedPassword: string | null = null;
 let sessionExpiresAt: number | null = null;
+const pendingApprovals = new Map<string, PendingApproval>();
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (globalThis as any).process;
 } catch {
   // ignore
+}
+
+if (!('Buffer' in globalThis)) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).Buffer = Buffer;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -207,6 +224,10 @@ function getFlowAccessNode(network: 'mainnet' | 'testnet'): string {
   return network === 'mainnet'
     ? NETWORKS.FLOW_MAINNET.rpcEndpoint
     : NETWORKS.FLOW_TESTNET.rpcEndpoint;
+}
+
+function nextApprovalId(): string {
+  return `approval_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 async function scheduleAutoLock(minutes: number): Promise<void> {
@@ -646,6 +667,202 @@ async function sendEvmTransaction(payload: {
   };
 }
 
+async function openApprovalWindow(requestId: string): Promise<void> {
+  const url = chrome.runtime.getURL(
+    `src/popup/index.html?approvalRequestId=${encodeURIComponent(requestId)}`
+  );
+  await chrome.windows.create({
+    url,
+    type: 'popup',
+    width: 420,
+    height: 680,
+  });
+}
+
+async function requestUserApproval(
+  scope: 'ethereum' | 'flow',
+  method: string,
+  origin: string,
+  params: unknown[]
+): Promise<boolean> {
+  const id = nextApprovalId();
+  return await new Promise<boolean>((resolve) => {
+    const timeoutId = globalThis.setTimeout(
+      () => {
+        pendingApprovals.delete(id);
+        resolve(false);
+      },
+      1000 * 60 * 3
+    );
+
+    pendingApprovals.set(id, {
+      id,
+      scope,
+      method,
+      origin,
+      params,
+      resolve: (approved) => {
+        globalThis.clearTimeout(timeoutId);
+        pendingApprovals.delete(id);
+        resolve(approved);
+      },
+      timeoutId,
+    });
+
+    void openApprovalWindow(id);
+  });
+}
+
+async function handleEthereumRpc(
+  origin: string,
+  method: string,
+  params: unknown[]
+): Promise<unknown> {
+  const connection = await getEvmConnection();
+  const provider = new EthProvider(connection.rpcUrl);
+
+  switch (method) {
+    case 'eth_requestAccounts': {
+      if (!unlockedVault) {
+        throw new Error('Unlock wallet in extension first');
+      }
+      const approved = await requestUserApproval('ethereum', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      const nextState = await connectEvm(connection.chainId, connection.rpcUrl);
+      return nextState.evmConnection.address ? [nextState.evmConnection.address] : [];
+    }
+    case 'eth_accounts': {
+      if (!connection.connected || !connection.address) {
+        return [];
+      }
+      return [connection.address];
+    }
+    case 'eth_chainId': {
+      return `0x${connection.chainId.toString(16)}`;
+    }
+    case 'net_version': {
+      return String(connection.chainId);
+    }
+    case 'eth_getBalance': {
+      const address = String(params[0] ?? connection.address ?? '');
+      const balance = await provider.getBalance(address);
+      return `0x${BigInt(balance).toString(16)}`;
+    }
+    case 'eth_gasPrice': {
+      const gasPrice = await provider.getGasPrice();
+      return `0x${BigInt(gasPrice).toString(16)}`;
+    }
+    case 'eth_estimateGas': {
+      const tx = (params[0] ?? {}) as {
+        from?: string;
+        to?: string;
+        gas?: string;
+        gasPrice?: string;
+        maxPriorityFeePerGas?: string;
+        maxFeePerGas?: string;
+        value?: string;
+        data?: string;
+      };
+      const gas = await provider.estimateGas(tx);
+      return `0x${BigInt(gas).toString(16)}`;
+    }
+    case 'personal_sign': {
+      const first = params[0];
+      const second = params[1];
+      const message =
+        typeof first === 'string' &&
+        first.toLowerCase().startsWith('0x') &&
+        typeof second === 'string'
+          ? second
+          : String(first ?? '');
+      const approved = await requestUserApproval('ethereum', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      const signed = await signEvmMessage(message);
+      return signed.signature.startsWith('0x') ? signed.signature : `0x${signed.signature}`;
+    }
+    case 'eth_sendTransaction': {
+      const tx = (params[0] ?? {}) as {
+        to?: string;
+        value?: string;
+        data?: string;
+        gas?: string;
+        gasPrice?: string;
+      };
+      if (!tx.to) {
+        throw new Error('Missing tx.to');
+      }
+      const approved = await requestUserApproval('ethereum', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      const result = await sendEvmTransaction({
+        to: tx.to,
+        valueWei: tx.value ? BigInt(tx.value).toString() : '0',
+        data: tx.data,
+        gasLimit: tx.gas ? Number(BigInt(tx.gas)) : undefined,
+        gasPriceWei: tx.gasPrice ? BigInt(tx.gasPrice).toString() : undefined,
+      });
+      return result.txHash;
+    }
+    default:
+      throw new Error(`Unsupported Ethereum RPC method: ${method}`);
+  }
+}
+
+async function handleFlowRpc(origin: string, method: string, params: unknown[]): Promise<unknown> {
+  switch (method) {
+    case 'fcl_connect': {
+      const approved = await requestUserApproval('flow', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      const connection = await getFlowConnection();
+      if (!connection.connected || !connection.address || connection.keyId === null) {
+        throw new Error('Flow not connected in wallet');
+      }
+      return {
+        loggedIn: true,
+        addr: connection.address,
+        services: [],
+      };
+    }
+    case 'fcl_disconnect': {
+      await disconnectFlow();
+      return { loggedIn: false };
+    }
+    case 'fcl_snapshot': {
+      const connection = await getFlowConnection();
+      return {
+        loggedIn: Boolean(connection.connected && connection.address),
+        addr: connection.address,
+      };
+    }
+    case 'fcl_sign_message': {
+      const message = String(params[0] ?? '');
+      const approved = await requestUserApproval('flow', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      return await signFlowMessage(message);
+    }
+    case 'fcl_mutate': {
+      const input = (params[0] ?? {}) as { cadence?: string; limit?: number };
+      const approved = await requestUserApproval('flow', method, origin, params);
+      if (!approved) {
+        throw new Error('User rejected request');
+      }
+      const tx = await sendFlowTransaction(String(input.cadence ?? ''), input.limit);
+      return tx.txId;
+    }
+    default:
+      throw new Error(`Unsupported Flow RPC method: ${method}`);
+  }
+}
+
 async function getActiveTabId(): Promise<number | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab?.id ?? null;
@@ -779,6 +996,43 @@ chrome.runtime.onMessage.addListener((request: BackgroundRequest, _sender, sendR
             txHash: tx.txHash,
             rawTransaction: tx.rawTransaction,
           } satisfies BackgroundResponse);
+          return;
+        }
+        case 'provider:rpc-request': {
+          const result =
+            request.scope === 'ethereum'
+              ? await handleEthereumRpc(request.origin, request.method, request.params)
+              : await handleFlowRpc(request.origin, request.method, request.params);
+          sendResponse({ ok: true, result } satisfies BackgroundResponse);
+          return;
+        }
+        case 'provider:get-approval-request': {
+          const pending = pendingApprovals.get(request.requestId);
+          sendResponse({
+            ok: true,
+            approval: pending
+              ? {
+                  id: pending.id,
+                  origin: pending.origin,
+                  scope: pending.scope,
+                  method: pending.method,
+                  params: pending.params,
+                }
+              : null,
+          } satisfies BackgroundResponse);
+          return;
+        }
+        case 'provider:resolve-approval': {
+          const pending = pendingApprovals.get(request.requestId);
+          if (!pending) {
+            sendResponse({
+              ok: false,
+              reason: 'Approval request not found or expired',
+            } satisfies BackgroundResponse);
+            return;
+          }
+          pending.resolve(request.approved);
+          sendResponse({ ok: true, resolved: true } satisfies BackgroundResponse);
           return;
         }
         case 'ui:open-sidepanel': {

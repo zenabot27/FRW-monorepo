@@ -26,10 +26,12 @@ import {
   evmSignMessage,
   flowSendTransaction,
   flowSignMessage,
+  getApprovalRequest,
   getOnboardingState,
   lockWallet,
   openSidePanelFromUi,
   resetWallet,
+  resolveApprovalRequest,
   revealSeedPhrase,
   setAutoLockMinutes,
   unlockWallet,
@@ -38,6 +40,7 @@ import type { UiSurface, WalletOnboardingState } from './types';
 
 type AppShellProps = {
   surface: UiSurface;
+  approvalRequestId?: string | null;
 };
 
 function wordsFromSeed(seedPhrase: string | null): string[] {
@@ -81,7 +84,7 @@ function SeedGrid({ words }: { words: string[] }) {
   );
 }
 
-export function AppShell({ surface }: AppShellProps) {
+export function AppShell({ surface, approvalRequestId }: AppShellProps) {
   const [state, setState] = useState<WalletOnboardingState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -110,6 +113,34 @@ export function AppShell({ surface }: AppShellProps) {
   const [evmValueInput, setEvmValueInput] = useState('0');
   const [evmDataInput, setEvmDataInput] = useState('0x');
   const [resultOutput, setResultOutput] = useState('');
+  const [approvalPayload, setApprovalPayload] = useState<{
+    id: string;
+    origin: string;
+    scope: 'ethereum' | 'flow';
+    method: string;
+    params: unknown[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!approvalRequestId) {
+      return;
+    }
+    let mounted = true;
+    void getApprovalRequest(approvalRequestId)
+      .then((payload) => {
+        if (mounted) {
+          setApprovalPayload(payload);
+        }
+      })
+      .catch((nextError) => {
+        if (mounted) {
+          setError(nextError instanceof Error ? nextError.message : 'Failed to load approval');
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [approvalRequestId]);
 
   useEffect(() => {
     let mounted = true;
@@ -206,6 +237,69 @@ export function AppShell({ surface }: AppShellProps) {
             </Paragraph>
             {error ? <SizableText color="#ff7d97">{error}</SizableText> : null}
           </Card.Header>
+        </Card>
+      </YStack>
+    );
+  }
+
+  async function handleApprovalResolution(approved: boolean): Promise<void> {
+    if (!approvalRequestId) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await resolveApprovalRequest(approvalRequestId, approved);
+      window.close();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to resolve approval');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (approvalRequestId) {
+    return (
+      <YStack className="wallet-surface" padding="$4" justifyContent="center" minHeight="100%">
+        <Card elevate bordered className="glass-card">
+          <Card.Header>
+            <H2 color="#f8fbff">Request Approval</H2>
+            <Paragraph color="#a8b8d6">
+              {approvalPayload
+                ? `${approvalPayload.origin} requests ${approvalPayload.method}`
+                : 'Loading request...'}
+            </Paragraph>
+            {approvalPayload ? (
+              <Paragraph color="#92a5c9">
+                Scope: {approvalPayload.scope} | Params: {JSON.stringify(approvalPayload.params)}
+              </Paragraph>
+            ) : null}
+            {error ? <SizableText color="#ff7d97">{error}</SizableText> : null}
+          </Card.Header>
+          <Card.Footer>
+            <XStack width="100%" gap="$2">
+              <Button
+                flex={1}
+                className="danger-btn"
+                disabled={busy}
+                onPress={() => {
+                  void handleApprovalResolution(false);
+                }}
+              >
+                Reject
+              </Button>
+              <Button
+                flex={1}
+                className="gradient-btn"
+                disabled={busy || !approvalPayload}
+                onPress={() => {
+                  void handleApprovalResolution(true);
+                }}
+              >
+                Approve
+              </Button>
+            </XStack>
+          </Card.Footer>
         </Card>
       </YStack>
     );

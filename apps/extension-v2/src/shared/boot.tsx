@@ -9,6 +9,7 @@ import type { UiSurface } from './types';
 
 export function boot(surface: UiSurface) {
   document.body.classList.add(`surface-${surface}`);
+  const approvalRequestId = new URLSearchParams(window.location.search).get('approvalRequestId');
 
   const container = document.getElementById('root');
   if (!container) {
@@ -20,7 +21,7 @@ export function boot(surface: UiSurface) {
     <StrictMode>
       <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
         <Theme name="dark">
-          <AppShell surface={surface} />
+          <AppShell surface={surface} approvalRequestId={approvalRequestId} />
         </Theme>
       </TamaguiProvider>
     </StrictMode>

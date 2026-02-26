@@ -152,3 +152,25 @@ export async function evmSendTransaction(params: {
   }
   throw new Error('reason' in response ? response.reason : 'Unexpected background response');
 }
+
+export async function getApprovalRequest(requestId: string): Promise<{
+  id: string;
+  origin: string;
+  scope: 'ethereum' | 'flow';
+  method: string;
+  params: unknown[];
+} | null> {
+  const response = await callBackground({ type: 'provider:get-approval-request', requestId });
+  if (response.ok && 'approval' in response) {
+    return response.approval;
+  }
+  throw new Error('reason' in response ? response.reason : 'Unexpected background response');
+}
+
+export async function resolveApprovalRequest(requestId: string, approved: boolean): Promise<void> {
+  const response = await callBackground({ type: 'provider:resolve-approval', requestId, approved });
+  if (response.ok && 'resolved' in response) {
+    return;
+  }
+  throw new Error('reason' in response ? response.reason : 'Unexpected background response');
+}
