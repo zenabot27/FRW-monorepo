@@ -34,6 +34,7 @@ import {
   resolveApprovalRequest,
   revealSeedPhrase,
   setAutoLockMinutes,
+  setActionOpenMode,
   unlockWallet,
 } from './extension-api';
 import type { UiSurface, WalletOnboardingState } from './types';
@@ -863,6 +864,38 @@ export function AppShell({ surface, approvalRequestId }: AppShellProps) {
                   </Card.Header>
                   <Card.Footer>
                     <YStack width="100%" gap="$3">
+                      <YStack gap="$2">
+                        <SizableText size="$2" color="#92a5c9">
+                          Open extension with action button
+                        </SizableText>
+                        <XStack gap="$2">
+                          <Button
+                            flex={1}
+                            className="ghost-btn"
+                            theme={state.actionMode === 'sidepanel' ? 'active' : undefined}
+                            disabled={busy}
+                            onPress={() => {
+                              void runTask(async () => await setActionOpenMode('sidepanel'));
+                            }}
+                          >
+                            Sidebar (Default)
+                          </Button>
+                          <Button
+                            flex={1}
+                            className="ghost-btn"
+                            theme={state.actionMode === 'popup' ? 'active' : undefined}
+                            disabled={busy}
+                            onPress={() => {
+                              void runTask(async () => await setActionOpenMode('popup'));
+                            }}
+                          >
+                            Popup
+                          </Button>
+                        </XStack>
+                      </YStack>
+
+                      <Separator />
+
                       <YStack gap="$2">
                         <SizableText size="$2" color="#92a5c9">
                           Auto-lock minutes (1-240)

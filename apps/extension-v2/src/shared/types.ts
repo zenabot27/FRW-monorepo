@@ -1,4 +1,5 @@
 export type UiSurface = 'popup' | 'sidepanel';
+export type ActionOpenMode = 'sidepanel' | 'popup';
 
 export type CreatedWalletAccount = {
   evmAddress: string;
@@ -33,6 +34,7 @@ export type WalletOnboardingState = {
   sessionExpiresAt: number | null;
   flowConnection: FlowConnection;
   evmConnection: EvmConnection;
+  actionMode: ActionOpenMode;
 };
 
 export type BackgroundRequest =
@@ -44,6 +46,7 @@ export type BackgroundRequest =
   | { type: 'wallet:change-password'; oldPassword: string; newPassword: string }
   | { type: 'wallet:reveal-seed'; password: string }
   | { type: 'wallet:set-auto-lock'; minutes: number }
+  | { type: 'wallet:set-action-mode'; mode: ActionOpenMode }
   | { type: 'wallet:reset' }
   | { type: 'wallet:flow-connect'; address: string; keyId: number; network: 'mainnet' | 'testnet' }
   | { type: 'wallet:flow-disconnect' }

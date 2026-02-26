@@ -1,4 +1,9 @@
-import type { BackgroundRequest, BackgroundResponse, WalletOnboardingState } from './types';
+import type {
+  ActionOpenMode,
+  BackgroundRequest,
+  BackgroundResponse,
+  WalletOnboardingState,
+} from './types';
 
 async function callBackground(request: BackgroundRequest): Promise<BackgroundResponse> {
   return await chrome.runtime.sendMessage(request);
@@ -58,6 +63,11 @@ export async function revealSeedPhrase(password: string): Promise<string> {
 
 export async function setAutoLockMinutes(minutes: number): Promise<WalletOnboardingState> {
   const response = await callBackground({ type: 'wallet:set-auto-lock', minutes });
+  return requireState(response);
+}
+
+export async function setActionOpenMode(mode: ActionOpenMode): Promise<WalletOnboardingState> {
+  const response = await callBackground({ type: 'wallet:set-action-mode', mode });
   return requireState(response);
 }
 

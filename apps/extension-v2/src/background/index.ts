@@ -14,6 +14,7 @@ import {
   SignatureAlgorithm,
 } from '../../../../packages/wallet/src/types/key';
 import type {
+  ActionOpenMode,
   BackgroundRequest,
   BackgroundResponse,
   CreatedWalletAccount,
@@ -27,7 +28,9 @@ const AUTO_LOCK_MINUTES_KEY = 'wallet-v2-auto-lock-minutes';
 const AUTO_LOCK_ALARM = 'wallet-v2-auto-lock';
 const FLOW_CONNECTION_KEY = 'wallet-v2-flow-connection';
 const EVM_CONNECTION_KEY = 'wallet-v2-evm-connection';
+const ACTION_MODE_KEY = 'wallet-v2-action-open-mode';
 const DEFAULT_AUTO_LOCK_MINUTES = 15;
+const DEFAULT_ACTION_MODE: ActionOpenMode = 'sidepanel';
 const DEFAULT_FLOW_CONNECTION: FlowConnection = {
   connected: false,
   address: null,
@@ -230,6 +233,32 @@ function nextApprovalId(): string {
   return `approval_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function normalizeActionMode(value: unknown): ActionOpenMode {
+  return value === 'popup' ? 'popup' : 'sidepanel';
+}
+
+async function getActionMode(): Promise<ActionOpenMode> {
+  const result = await chrome.storage.local.get(ACTION_MODE_KEY);
+  const mode = normalizeActionMode(result[ACTION_MODE_KEY]);
+  if (!result[ACTION_MODE_KEY]) {
+    await chrome.storage.local.set({ [ACTION_MODE_KEY]: mode });
+  }
+  return mode;
+}
+
+async function applyActionMode(mode: ActionOpenMode): Promise<void> {
+  await chrome.action.setPopup({
+    popup: mode === 'popup' ? 'src/popup/index.html' : '',
+  });
+}
+
+async function setActionMode(mode: ActionOpenMode): Promise<ActionOpenMode> {
+  const normalized = normalizeActionMode(mode);
+  await chrome.storage.local.set({ [ACTION_MODE_KEY]: normalized });
+  await applyActionMode(normalized);
+  return normalized;
+}
+
 async function scheduleAutoLock(minutes: number): Promise<void> {
   if (!unlockedVault) {
     sessionExpiresAt = null;
@@ -283,6 +312,7 @@ async function buildState(vaultExists: boolean): Promise<WalletOnboardingState> 
   const autoLockMinutes = await getAutoLockMinutes();
   const flowConnection = await getFlowConnection();
   const evmConnection = await getEvmConnection();
+  const actionMode = await getActionMode();
 
   if (!vaultExists) {
     return {
@@ -296,6 +326,7 @@ async function buildState(vaultExists: boolean): Promise<WalletOnboardingState> 
       sessionExpiresAt: null,
       flowConnection,
       evmConnection,
+      actionMode,
     };
   }
 
@@ -311,6 +342,7 @@ async function buildState(vaultExists: boolean): Promise<WalletOnboardingState> 
       sessionExpiresAt: null,
       flowConnection,
       evmConnection,
+      actionMode,
     };
   }
 
@@ -326,6 +358,7 @@ async function buildState(vaultExists: boolean): Promise<WalletOnboardingState> 
       sessionExpiresAt,
       flowConnection,
       evmConnection,
+      actionMode,
     };
   }
 
@@ -340,6 +373,7 @@ async function buildState(vaultExists: boolean): Promise<WalletOnboardingState> 
     sessionExpiresAt,
     flowConnection,
     evmConnection,
+    actionMode,
   };
 }
 
@@ -883,13 +917,24 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  void setupSidePanelBehavior();
-  void getAutoLockMinutes();
+  void (async () => {
+    await setupSidePanelBehavior();
+    await getAutoLockMinutes();
+    await setActionMode(DEFAULT_ACTION_MODE);
+  })();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void setupSidePanelBehavior();
+  void (async () => {
+    await setupSidePanelBehavior();
+    await applyActionMode(await getActionMode());
+  })();
 });
+
+void (async () => {
+  await setupSidePanelBehavior();
+  await applyActionMode(await getActionMode());
+})();
 
 chrome.runtime.onMessage.addListener((request: BackgroundRequest, _sender, sendResponse) => {
   void (async () => {
@@ -932,6 +977,12 @@ chrome.runtime.onMessage.addListener((request: BackgroundRequest, _sender, sendR
         }
         case 'wallet:set-auto-lock': {
           const state = await updateAutoLock(request.minutes);
+          sendResponse({ ok: true, state } satisfies BackgroundResponse);
+          return;
+        }
+        case 'wallet:set-action-mode': {
+          await setActionMode(request.mode);
+          const state = await buildState(await hasVault());
           sendResponse({ ok: true, state } satisfies BackgroundResponse);
           return;
         }
