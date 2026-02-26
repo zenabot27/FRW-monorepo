@@ -1,0 +1,98 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  font-family: 'Sofia Pro', 'Avenir Next', 'Trebuchet MS', sans-serif;
+  background: #0b1018;
+  color: #e7edf7;
+}
+
+.wallet-surface {
+  min-height: 100%;
+  position: relative;
+}
+
+.wallet-frame {
+  position: relative;
+  z-index: 4;
+}
+
+.ambient-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(to right, rgba(133, 171, 232, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(133, 171, 232, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.24;
+}
+
+.ambient-orb {
+  position: fixed;
+  border-radius: 999px;
+  filter: blur(44px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ambient-orb-left {
+  top: 58px;
+  left: -80px;
+  width: 220px;
+  height: 220px;
+  background: rgba(90, 236, 220, 0.06);
+}
+
+.ambient-orb-right {
+  top: 100px;
+  right: -72px;
+  width: 210px;
+  height: 210px;
+  background: rgba(255, 97, 173, 0.06);
+}
+
+.glass-card {
+  border-radius: 22px !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(17, 24, 36, 0.92) !important;
+  backdrop-filter: blur(12px) saturate(120%);
+  box-shadow:
+    0 8px 24px rgba(4, 8, 20, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.hero-card {
+  border-color: rgba(89, 215, 255, 0.22) !important;
+}
+
+.gradient-btn {
+  color: #fff !important;
+  border-color: rgba(139, 170, 224, 0.32) !important;
+  background: #233249 !important;
+  box-shadow: none;
+}
+
+.ghost-btn {
+  color: #e6efff !important;
+  border-color: rgba(154, 184, 232, 0.36) !important;
+  background: rgba(27, 35, 49, 0.8) !important;
+}
+
+.danger-btn {
+  color: #ffd6df !important;
+  border-color: rgba(255, 103, 135, 0.48) !important;
+  background: rgba(255, 83, 119, 0.12) !important;
+}
+
+.seed-pill {
+  transition: transform 180ms ease;
+}
+
+.seed-pill:hover {
+  transform: translateY(-1px);
+}

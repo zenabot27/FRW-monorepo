@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["chrome"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@onflow/frw-utils": ["../../packages/utils/src/logger.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "manifest.config.ts"]
+}
